@@ -47,12 +47,8 @@
 
   </main>
 
+  <script src="version.js"></script>
   <script>
-  /* ============================================================
-     VERSIÓN — subila acá y también en VERSION de sw.js
-     ============================================================ */
-  const APP_VERSION = 'v3';
-
   /* ============================================================
      CONFIGURACIÓN (editá acá los valores rápidos y por defecto)
      ============================================================ */
@@ -369,6 +365,7 @@
       beginPrep(p.n + '/' + totalExercises(), (t) => {
         phaseStart = t - pausedElapsed;             // retoma justo donde quedó
         renderPhase(p);
+        play(SOUND.workStart);                      // campana al reanudar
       });
       timerId = setInterval(tick, 50);
     }
