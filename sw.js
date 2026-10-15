@@ -1,12 +1,13 @@
-/* Cambiá este número cada vez que modifiques cualquier archivo,
-   así los celulares descargan la versión nueva. */
-const VERSION = 'v1';
-const CACHE = 'tabata-' + VERSION;
+/* La versión se define en version.js (cambiala ahí cuando modifiques cualquier archivo,
+   así los celulares descargan la versión nueva). */
+importScripts('version.js');
+const CACHE = 'tabata-' + APP_VERSION;
 
 const ASSETS = [
   './',
   'index.html',
   'style.css',
+  'version.js',
   'manifest.json',
   'icons/icon-192.png',
   'icons/icon-512.png',
@@ -22,7 +23,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE)
       // Uno por uno: si falta un archivo, los demás igual se guardan
-      .then((cache) => Promise.allSettled(ASSETS.map((a) => cache.add(a))))
+      .then((cache) => Promise.allSettled(ASSETS.map((a) => cache.add(new Request(a, { cache: 'reload' })))))
       .then(() => self.skipWaiting())
   );
 });
