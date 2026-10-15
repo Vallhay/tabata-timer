@@ -1,0 +1,266 @@
+/* ============================================================
+   TEMA — cambiá sólo estas variables para rehacer los colores
+   ============================================================ */
+:root {
+  --bg:        #2b7bbd;   /* azul principal */
+  --bg-deep:   #1f5f96;   /* azul más oscuro (degradado, botón detener) */
+  --surface:   #ffffff;   /* tarjeta de configuración */
+  --ink:       #173a58;   /* texto sobre blanco */
+  --ink-soft:  #5f7f9b;   /* texto secundario sobre blanco */
+  --line:      #dbe7f1;   /* separadores claros */
+  --on-bg:     #ffffff;   /* texto sobre el azul */
+
+  --idle:      rgba(255, 255, 255, 0.16);  /* detrás del número, en espera */
+  --prep:      rgba(255, 255, 255, 0.32);  /* detrás del número, cuenta previa */
+  --go:        #1fa35a;                    /* detrás del número, ejercicio */
+  --rest:      #d8454c;                    /* detrás del número, descanso */
+  --pause:     rgba(255, 255, 255, 0.22);  /* botón de pausa */
+
+  /* Botones de valores rápidos (relieve) vs. campo manual (hundido) */
+  --key:          #dcebf8;
+  --key-edge:     #a9c7e1;
+  --field-border: #6f93b3;
+
+  --radius:    22px;
+  --radius-sm: 12px;
+  --font: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 100%) fixed;
+  color: var(--on-bg);
+  font-family: var(--font);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app {
+  max-width: 480px;
+  margin: 0 auto;
+  display: grid;
+  gap: 12px;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 12px)
+    calc(env(safe-area-inset-right, 0px) + 14px)
+    calc(env(safe-area-inset-bottom, 0px) + 14px)
+    calc(env(safe-area-inset-left, 0px) + 14px);
+}
+
+/* ---------- Número grande ---------- */
+.display {
+  text-align: center;
+  padding: 18px 10px 14px;
+  border-radius: var(--radius);
+  background: var(--idle);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+.display[data-phase="prep"] { background: var(--prep); }
+.display[data-phase="work"] { background: var(--go); }
+.display[data-phase="rest"] { background: var(--rest); }
+.display[data-phase="done"] { background: var(--surface); color: var(--bg-deep); }
+
+.phase {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0.92;
+}
+
+/* El tamaño depende del largo del texto ("3/9" = 3, "1/12" = 4, "10/12" = 5) */
+.count {
+  font-size: clamp(4.5rem, 29vw, 9.5rem);
+  font-weight: 800;
+  line-height: 1;
+  margin: 4px 0 2px;
+  font-variant-numeric: tabular-nums;
+}
+.count[data-len="3"] { font-size: clamp(5rem, 46vw, 13rem); }
+.count[data-len="4"] { font-size: clamp(5rem, 38vw, 11rem); }
+
+.seconds {
+  font-size: 1.5rem;
+  font-weight: 700;
+  min-height: 1.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Barra de progreso ---------- */
+.progress {
+  height: 12px;
+  border-radius: 999px;
+  background: var(--idle);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: 999px;
+  background: var(--surface);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+/* ---------- Botones de inicio / pausa ---------- */
+.controls { display: flex; gap: 10px; }
+
+.start {
+  flex: 1;
+  min-width: 0;
+  padding: 16px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--bg-deep);
+  font: inherit;
+  font-size: 1.5rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.2);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+.start:active { transform: translateY(4px); box-shadow: 0 2px 0 rgba(0, 0, 0, 0.2); }
+.start.is-running { background: var(--ink); color: var(--on-bg); }
+
+.pause {
+  flex: none;
+  width: 62px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--pause);
+  color: var(--on-bg);
+  cursor: pointer;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.2);
+  transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.2s ease;
+}
+.pause:active { transform: translateY(4px); box-shadow: 0 2px 0 rgba(0, 0, 0, 0.2); }
+.pause[hidden] { display: none; }
+.pause:disabled { opacity: 0.4; }
+.pause svg { width: 28px; height: 28px; fill: currentColor; }
+.pause .i-play { display: none; }
+.pause[data-state="paused"] .i-pause { display: none; }
+.pause[data-state="paused"] .i-play { display: block; }
+
+.duration {
+  margin: 12px 0 0;
+  text-align: center;
+  font-size: 0.85rem;
+  opacity: 0.88;
+}
+
+/* ---------- Configuración (compacta) ---------- */
+.config {
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: var(--radius);
+  padding: 2px 12px;
+  transition: opacity 0.2s ease;
+}
+.config.locked { opacity: 0.55; }
+
+.group {
+  display: grid;
+  grid-template-columns: 5.6rem 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.group:last-child { border-bottom: 0; }
+
+.group label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.group label small {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr) 1.4fr;
+  gap: 6px;
+  align-items: center;
+}
+
+/* Botones: macizos, con relieve y color propio */
+.preset {
+  min-width: 0;
+  min-height: 40px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--key);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 3px 0 var(--key-edge);
+  transition: transform 0.06s ease, box-shadow 0.06s ease;
+}
+.preset:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--key-edge); }
+.preset.active {
+  background: var(--bg);
+  color: var(--on-bg);
+  box-shadow: 0 3px 0 var(--bg-deep);
+}
+
+/* Campo manual: blanco, hundido y con borde oscuro, separado de los botones */
+.row input {
+  width: calc(100% - 8px);
+  margin-left: 8px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 4px;
+  border: 2px solid var(--field-border);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: inset 0 2px 5px rgba(23, 58, 88, 0.2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1.05rem;       /* 16px o más evita el zoom de iOS al escribir */
+  font-weight: 700;
+  text-align: center;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.row input::-webkit-inner-spin-button,
+.row input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.row input:focus {
+  outline: none;
+  border-color: var(--bg);
+  box-shadow: inset 0 2px 5px rgba(23, 58, 88, 0.2), 0 0 0 3px rgba(43, 123, 189, 0.3);
+}
+
+.preset:focus-visible,
+.start:focus-visible,
+.pause:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+button:disabled, input:disabled { cursor: default; }
+
+/* ---------- Versión ---------- */
+.version {
+  margin: 0;
+  text-align: center;
+  font-size: 0.7rem;
+  opacity: 0.35;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
