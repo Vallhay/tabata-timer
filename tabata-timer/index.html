@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2b7bbd">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Tabata</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+
+    <section class="display" id="display" data-phase="idle" aria-live="polite">
+      <div class="phase" id="phase">Listo</div>
+      <div class="count" id="count">0/9</div>
+      <div class="seconds" id="seconds">&nbsp;</div>
+    </section>
+
+    <div class="progress" id="progress" role="progressbar" aria-label="Progreso total"
+         aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="start" id="startBtn">Comenzar</button>
+      <p class="duration">Duración: <span id="duration">--:--</span></p>
+    </div>
+
+    <section class="config" id="config" aria-label="Configuración"></section>
+
+  </main>
+
+  <script>
+  /* ============================================================
+     CONFIGURACIÓN (editá acá los valores rápidos y por defecto)
+     ============================================================ */
+  const CONFIG = [
+    { key: 'ejercicios', label: 'Ejercicios', unit: '',     presets: [3, 4, 5],    def: 3,  min: 1, max: 99  },
+    { key: 'vueltas',    label: 'Vueltas',    unit: '',     presets: [3, 4, 5],    def: 3,  min: 1, max: 99  },
+    { key: 'tiempo',     label: 'Tiempo',     unit: 'seg',  presets: [25, 30, 35], def: 25, min: 1, max: 999 },
+    { key: 'descanso',   label: 'Descanso',   unit: 'seg',  presets: [10, 12, 15], def: 10, min: 0, max: 999 },
+  ];
+
+  /* Nombres de los archivos dentro de /sounds (sin extensión) */
+  const SOUND = {
+    count3: '3-sound',
+    count2: '2-sound',
+    count1: '1-sound',
+    restStart: 'buzzer-sound',
+    workStart: 'fight-bell-sound',
+    end: 'end-sound',
+  };
+
+  /* ============================================================
+     ESTADO
+     ============================================================ */
+  const $ = (id) => document.getElementById(id);
+  const displayEl = $('display'), phaseEl = $('phase'), countEl = $('count'),
+        secondsEl = $('seconds'), startBtn = $('startBtn'), durationEl = $('duration'),
+        configEl = $('config'), progressEl = $('progress'), progressFill = $('progressFill');
+
+  const values = {};
+  const inputs = {};
+  const presetBtns = {};
+
+  let running = false;
+  let phases = [];
+  let offsets = [];      // segundos acumulados al inicio de cada fase
+  let planned = 1;       // duración total real de la rutina
+  let idx = 0;
+  let phaseStart = 0;
+  let lastCount = null;
+  let timerId = null;
+  let wakeLock = null;
+
+  /* ============================================================
+     UI DE CONFIGURACIÓN
+     ============================================================ */
+  function clamp(cfg, n) {
+    return Math.min(cfg.max, Math.max(cfg.min, Math.round(n)));
+  }
+
+  function buildConfig() {
+    CONFIG.forEach((cfg) => {
+      values[cfg.key] = cfg.def;
+
+      const group = document.createElement('div');
+      group.className = 'group';
+
+      const label = document.createElement('label');
+      label.htmlFor = 'in-' + cfg.key;
+      label.innerHTML = cfg.label + (cfg.unit ? ' <small>' + cfg.unit + '</small>' : '');
+
+      const row = document.createElement('div');
+      row.className = 'row';
+
+      presetBtns[cfg.key] = cfg.presets.map((p) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'preset';
+        b.textContent = p;
+        b.addEventListener('click', () => setValue(cfg, p, true));
+        row.appendChild(b);
+        return b;
+      });
+
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.id = 'in-' + cfg.key;
+      input.inputMode = 'numeric';
+      input.min = cfg.min;
+      input.max = cfg.max;
+      input.value = cfg.def;
+      input.addEventListener('input', () => {
+        const n = parseInt(input.value, 10);
+        if (Number.isNaN(n)) return;
+        setValue(cfg, n, false);
+      });
+      input.addEventListener('change', () => { input.value = values[cfg.key]; });
+      row.appendChild(input);
+      inputs[cfg.key] = input;
+
+      group.append(label, row);
+      configEl.appendChild(group);
+    });
+  }
+
+  function setValue(cfg, n, syncInput) {
+    values[cfg.key] = clamp(cfg, n);
+    if (syncInput) inputs[cfg.key].value = values[cfg.key];
+    syncPresets(cfg);
+    refresh();
+  }
+
+  function syncPresets(cfg) {
+    presetBtns[cfg.key].forEach((b, i) => {
+      b.classList.toggle('active', cfg.presets[i] === values[cfg.key]);
+    });
+  }
+
+  function lockConfig(locked) {
+    configEl.classList.toggle('locked', locked);
+    configEl.querySelectorAll('button, input').forEach((el) => { el.disabled = locked; });
+  }
+
+  /* ============================================================
+     CÁLCULOS
+     ============================================================ */
+  function totalExercises() { return values.ejercicios * values.vueltas; }
+
+  function totalSeconds() {
+    const n = totalExercises();
+    return n * values.tiempo + Math.max(0, n - 1) * values.descanso;
+  }
+
+  function fmt(s) {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    const mm = String(m).padStart(2, '0'), ss = String(sec).padStart(2, '0');
+    return h ? h + ':' + mm + ':' + ss : mm + ':' + ss;
+  }
+
+  /* Un descanso entre cada ejercicio, ninguno antes del primero ni después del último */
+  function buildPhases() {
+    const n = totalExercises();
+    const list = [];
+    for (let i = 1; i <= n; i++) {
+      list.push({ type: 'work', n: i, dur: values.tiempo });
+      if (i < n && values.descanso > 0) list.push({ type: 'rest', n: i, dur: values.descanso });
+    }
+    return list;
+  }
+
+  /* ============================================================
+     PANTALLA
+     ============================================================ */
+  function setDisplay(phase, label, count, secs) {
+    displayEl.dataset.phase = phase;
+    phaseEl.textContent = label;
+    countEl.textContent = count;
+    secondsEl.innerHTML = secs === '' ? '&nbsp;' : secs;
+  }
+
+  function setProgress(frac) {
+    const f = Math.min(1, Math.max(0, frac));
+    progressFill.style.transform = 'scaleX(' + f + ')';
+    progressEl.setAttribute('aria-valuenow', Math.round(f * 100));
+  }
+
+  function refresh() {
+    durationEl.textContent = fmt(totalSeconds());
+    if (!running) {
+      setDisplay('idle', 'Listo', '0/' + totalExercises(), '');
+      setProgress(0);
+    }
+  }
+
+  /* ============================================================
+     SONIDO (Web Audio: baja latencia y funciona offline)
+     ============================================================ */
+  let ctx = null;
+  const buffers = {};
+
+  async function loadSound(name) {
+    for (const ext of ['ogg', 'mp3']) {      // mp3 sólo como respaldo (iPhone)
+      try {
+        const res = await fetch('sounds/' + name + '.' + ext);
+        if (!res.ok) continue;
+        buffers[name] = await ctx.decodeAudioData(await res.arrayBuffer());
+        return;
+      } catch (e) { /* probar siguiente formato */ }
+    }
+  }
+
+  function initAudio() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    ctx = new AC();
+    Object.values(SOUND).forEach(loadSound);
+  }
+
+  function play(name) {
+    if (!ctx || !buffers[name]) return;
+    const src = ctx.createBufferSource();
+    src.buffer = buffers[name];
+    src.connect(ctx.destination);
+    src.start();
+  }
+
+  /* ============================================================
+     TEMPORIZADOR
+     ============================================================ */
+  function enterPhase(i, withSound, t) {
+    idx = i;
+    phaseStart = t;
+    lastCount = null;
+    const p = phases[i];
+    const isWork = p.type === 'work';
+    setDisplay(p.type, isWork ? 'Ejercicio' : 'Descanso', p.n + '/' + totalExercises(), p.dur + ' s');
+    if (withSound) {
+      play(isWork ? SOUND.workStart : SOUND.restStart);
+      if (navigator.vibrate) navigator.vibrate(isWork ? 200 : [100, 60, 100]);
+    }
+  }
+
+  function tick() {
+    const now = performance.now();
+
+    // Avanza de fase (en un bucle por si la pestaña estuvo en segundo plano)
+    for (;;) {
+      const p = phases[idx];
+      const end = phaseStart + p.dur * 1000;
+      if (now < end) break;
+      if (idx === phases.length - 1) { finish(); return; }
+      enterPhase(idx + 1, now - end < 1000, end);
+    }
+
+    const p = phases[idx];
+    const left = p.dur - (now - phaseStart) / 1000;
+    const secs = Math.ceil(left);
+    secondsEl.textContent = secs + ' s';
+    setProgress((offsets[idx] + (now - phaseStart) / 1000) / planned);
+
+    // Cuenta regresiva 3-2-1 (no se repite con el sonido de inicio de fase)
+    if (secs >= 1 && secs <= 3 && secs < p.dur && secs !== lastCount) {
+      lastCount = secs;
+      play(SOUND['count' + secs]);
+    }
+  }
+
+  function start() {
+    if (ctx && ctx.state === 'suspended') ctx.resume();   // el toque desbloquea el audio
+    phases = buildPhases();
+    planned = 0;
+    offsets = phases.map((p) => { const o = planned; planned += p.dur; return o; });
+    running = true;
+    lockConfig(true);
+    startBtn.textContent = 'Detener';
+    startBtn.classList.add('is-running');
+    requestWake();
+    enterPhase(0, true, performance.now());
+    timerId = setInterval(tick, 50);
+  }
+
+  function endRun() {
+    clearInterval(timerId);
+    running = false;
+    lockConfig(false);
+    startBtn.textContent = 'Comenzar';
+    startBtn.classList.remove('is-running');
+    releaseWake();
+  }
+
+  function stop() {
+    endRun();
+    refresh();
+  }
+
+  function finish() {
+    endRun();
+    play(SOUND.end);
+    const n = totalExercises();
+    setDisplay('done', '¡Terminado!', n + '/' + n, '');
+    setProgress(1);
+  }
+
+  startBtn.addEventListener('click', () => (running ? stop() : start()));
+
+  /* ============================================================
+     PANTALLA ENCENDIDA DURANTE EL ENTRENAMIENTO
+     ============================================================ */
+  async function requestWake() {
+    try {
+      if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+    } catch (e) { /* no soportado o denegado */ }
+  }
+  function releaseWake() {
+    if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (running && document.visibilityState === 'visible') requestWake();
+  });
+
+  /* ============================================================
+     INICIO
+     ============================================================ */
+  buildConfig();
+  CONFIG.forEach(syncPresets);
+  refresh();
+  initAudio();
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
+  </script>
+</body>
+</html>

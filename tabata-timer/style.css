@@ -1,0 +1,189 @@
+/* ============================================================
+   TEMA — cambiá sólo estas variables para rehacer los colores
+   ============================================================ */
+:root {
+  --bg:        #2b7bbd;   /* azul principal */
+  --bg-deep:   #1f5f96;   /* azul más oscuro (degradado, botón detener) */
+  --surface:   #ffffff;   /* tarjeta de configuración */
+  --ink:       #173a58;   /* texto sobre blanco */
+  --ink-soft:  #5f7f9b;   /* texto secundario sobre blanco */
+  --line:      #cfe0ee;   /* bordes claros */
+  --tint:      #f3f8fc;   /* fondo de botones sin seleccionar */
+  --on-bg:     #ffffff;   /* texto sobre el azul */
+
+  --idle:      rgba(255, 255, 255, 0.16);  /* detrás del número, en espera */
+  --go:        #1fa35a;                    /* detrás del número, ejercicio */
+  --rest:      #d8454c;                    /* detrás del número, descanso */
+
+  --radius:    22px;
+  --radius-sm: 14px;
+  --font: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 100%) fixed;
+  color: var(--on-bg);
+  font-family: var(--font);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app {
+  max-width: 480px;
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 16px)
+    calc(env(safe-area-inset-right, 0px) + 16px)
+    calc(env(safe-area-inset-bottom, 0px) + 28px)
+    calc(env(safe-area-inset-left, 0px) + 16px);
+}
+
+/* ---------- Número grande ---------- */
+.display {
+  text-align: center;
+  padding: 26px 12px 22px;
+  border-radius: var(--radius);
+  background: var(--idle);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+.display[data-phase="work"] { background: var(--go); }
+.display[data-phase="rest"] { background: var(--rest); }
+.display[data-phase="done"] { background: var(--surface); color: var(--bg-deep); }
+
+.phase {
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0.92;
+}
+
+.count {
+  font-size: clamp(4.5rem, 27vw, 8.5rem);
+  font-weight: 800;
+  line-height: 1;
+  margin: 6px 0 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.seconds {
+  font-size: 1.8rem;
+  font-weight: 700;
+  min-height: 2.2rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Barra de progreso ---------- */
+.progress {
+  height: 14px;
+  border-radius: 999px;
+  background: var(--idle);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: 999px;
+  background: var(--surface);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+/* ---------- Botón de inicio ---------- */
+.start {
+  width: 100%;
+  padding: 20px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--bg-deep);
+  font: inherit;
+  font-size: 1.6rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.2);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+.start:active { transform: translateY(4px); box-shadow: 0 2px 0 rgba(0, 0, 0, 0.2); }
+.start.is-running { background: var(--ink); color: var(--on-bg); }
+
+.duration {
+  margin: 12px 0 0;
+  text-align: center;
+  font-size: 0.9rem;
+  opacity: 0.88;
+}
+
+/* ---------- Configuración ---------- */
+.config {
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: var(--radius);
+  padding: 6px 16px 10px;
+  transition: opacity 0.2s ease;
+}
+.config.locked { opacity: 0.55; }
+
+.group { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.group:last-child { border-bottom: 0; }
+
+.group label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.group label small {
+  margin-left: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr) 1.3fr;
+  gap: 8px;
+}
+
+.preset,
+.row input {
+  min-width: 0;
+  min-height: 50px;
+  border: 2px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--tint);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1.15rem;       /* 16px o más evita el zoom de iOS al escribir */
+  font-weight: 700;
+}
+
+.preset { cursor: pointer; }
+.preset.active {
+  background: var(--bg);
+  border-color: var(--bg);
+  color: var(--on-bg);
+}
+
+.row input { width: 100%; text-align: center; background: var(--surface); }
+
+.preset:focus-visible,
+.row input:focus-visible,
+.start:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+button:disabled, input:disabled { cursor: default; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
