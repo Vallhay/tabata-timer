@@ -145,6 +145,16 @@
         setValue(cfg, n, false);
       });
       input.addEventListener('change', () => { input.value = values[cfg.key]; });
+
+      // Al tocar el campo se selecciona todo, así lo que escribas reemplaza el número
+      let justFocused = false;
+      input.addEventListener('focus', () => {
+        justFocused = true;
+        setTimeout(() => input.select(), 0);
+      });
+      input.addEventListener('mouseup', (e) => {   // evita que el clic deseleccione
+        if (justFocused) { e.preventDefault(); justFocused = false; }
+      });
       row.appendChild(input);
       inputs[cfg.key] = input;
 
