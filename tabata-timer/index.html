@@ -17,7 +17,7 @@
 
     <section class="display" id="display" data-phase="idle" aria-live="polite">
       <div class="phase" id="phase">Listo</div>
-      <div class="count" id="count">0/9</div>
+      <div class="count" id="count" data-len="3">0/9</div>
       <div class="seconds" id="seconds">&nbsp;</div>
     </section>
 
@@ -27,18 +27,37 @@
     </div>
 
     <div class="actions">
-      <button type="button" class="start" id="startBtn">Comenzar</button>
+      <div class="controls">
+        <button type="button" class="start" id="startBtn">Comenzar</button>
+        <button type="button" class="pause" id="pauseBtn" data-state="pause" aria-label="Pausar" hidden>
+          <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="6" y="5" width="4" height="14" rx="1.2"/><rect x="14" y="5" width="4" height="14" rx="1.2"/>
+          </svg>
+          <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/>
+          </svg>
+        </button>
+      </div>
       <p class="duration">Duración: <span id="duration">--:--</span></p>
     </div>
 
     <section class="config" id="config" aria-label="Configuración"></section>
 
+    <p class="version" id="version"></p>
+
   </main>
 
   <script>
   /* ============================================================
+     VERSIÓN — subila acá y también en VERSION de sw.js
+     ============================================================ */
+  const APP_VERSION = 'v3';
+
+  /* ============================================================
      CONFIGURACIÓN (editá acá los valores rápidos y por defecto)
      ============================================================ */
+  const PREP_SECONDS = 5;   // cuenta antes de empezar y al reanudar
+
   const CONFIG = [
     { key: 'ejercicios', label: 'Ejercicios', unit: '',     presets: [3, 4, 5],    def: 3,  min: 1, max: 99  },
     { key: 'vueltas',    label: 'Vueltas',    unit: '',     presets: [3, 4, 5],    def: 3,  min: 1, max: 99  },
@@ -61,22 +80,30 @@
      ============================================================ */
   const $ = (id) => document.getElementById(id);
   const displayEl = $('display'), phaseEl = $('phase'), countEl = $('count'),
-        secondsEl = $('seconds'), startBtn = $('startBtn'), durationEl = $('duration'),
-        configEl = $('config'), progressEl = $('progress'), progressFill = $('progressFill');
+        secondsEl = $('seconds'), startBtn = $('startBtn'), pauseBtn = $('pauseBtn'),
+        durationEl = $('duration'), configEl = $('config'),
+        progressEl = $('progress'), progressFill = $('progressFill');
 
   const values = {};
   const inputs = {};
   const presetBtns = {};
 
   let running = false;
+  let paused = false;
   let phases = [];
   let offsets = [];      // segundos acumulados al inicio de cada fase
   let planned = 1;       // duración total real de la rutina
   let idx = 0;
   let phaseStart = 0;
+  let pausedElapsed = 0; // ms transcurridos de la fase al pausar
   let lastCount = null;
   let timerId = null;
   let wakeLock = null;
+
+  // Cuenta previa (inicio y reanudar)
+  let prepEnd = null;
+  let prepDone = null;
+  let prepLast = null;
 
   /* ============================================================
      UI DE CONFIGURACIÓN
@@ -184,6 +211,7 @@
     displayEl.dataset.phase = phase;
     phaseEl.textContent = label;
     countEl.textContent = count;
+    countEl.dataset.len = String(count).length;   // el CSS ajusta el tamaño según el largo
     secondsEl.innerHTML = secs === '' ? '&nbsp;' : secs;
   }
 
@@ -193,12 +221,22 @@
     progressEl.setAttribute('aria-valuenow', Math.round(f * 100));
   }
 
+  function setPauseIcon(isPaused) {
+    pauseBtn.dataset.state = isPaused ? 'paused' : 'pause';
+    pauseBtn.setAttribute('aria-label', isPaused ? 'Reanudar' : 'Pausar');
+  }
+
   function refresh() {
     durationEl.textContent = fmt(totalSeconds());
     if (!running) {
       setDisplay('idle', 'Listo', '0/' + totalExercises(), '');
       setProgress(0);
     }
+  }
+
+  function renderPhase(p) {
+    const isWork = p.type === 'work';
+    setDisplay(p.type, isWork ? 'Ejercicio' : 'Descanso', p.n + '/' + totalExercises(), p.dur + ' s');
   }
 
   /* ============================================================
@@ -240,19 +278,41 @@
     idx = i;
     phaseStart = t;
     lastCount = null;
-    const p = phases[i];
-    const isWork = p.type === 'work';
-    setDisplay(p.type, isWork ? 'Ejercicio' : 'Descanso', p.n + '/' + totalExercises(), p.dur + ' s');
-    if (withSound) {
-      play(isWork ? SOUND.workStart : SOUND.restStart);
-      if (navigator.vibrate) navigator.vibrate(isWork ? 200 : [100, 60, 100]);
-    }
+    renderPhase(phases[i]);
+    if (withSound) play(phases[i].type === 'work' ? SOUND.workStart : SOUND.restStart);
+  }
+
+  /* Cuenta previa de PREP_SECONDS; al terminar llama a onDone(momentoExacto) */
+  function beginPrep(countText, onDone) {
+    prepEnd = performance.now() + PREP_SECONDS * 1000;
+    prepDone = onDone;
+    prepLast = null;
+    pauseBtn.disabled = true;
+    setDisplay('prep', 'Prepárate', countText, PREP_SECONDS + ' s');
   }
 
   function tick() {
     const now = performance.now();
 
-    // Avanza de fase (en un bucle por si la pestaña estuvo en segundo plano)
+    // ---- Cuenta previa ----
+    if (prepEnd !== null) {
+      if (now < prepEnd) {
+        const secs = Math.ceil((prepEnd - now) / 1000);
+        secondsEl.textContent = secs + ' s';
+        if (secs >= 1 && secs <= 3 && secs !== prepLast) {
+          prepLast = secs;
+          play(SOUND['count' + secs]);
+        }
+        return;
+      }
+      const end = prepEnd, done = prepDone;
+      prepEnd = null;
+      prepDone = null;
+      pauseBtn.disabled = false;
+      done(end);
+    }
+
+    // ---- Avanza de fase (en bucle por si la pestaña estuvo en segundo plano) ----
     for (;;) {
       const p = phases[idx];
       const end = phaseStart + p.dur * 1000;
@@ -280,17 +340,48 @@
     planned = 0;
     offsets = phases.map((p) => { const o = planned; planned += p.dur; return o; });
     running = true;
+    paused = false;
+    idx = 0;
+    setPauseIcon(false);
+    pauseBtn.hidden = false;
     lockConfig(true);
     startBtn.textContent = 'Detener';
     startBtn.classList.add('is-running');
     requestWake();
-    enterPhase(0, true, performance.now());
+    beginPrep('0/' + totalExercises(), (t) => enterPhase(0, true, t));
     timerId = setInterval(tick, 50);
+  }
+
+  function togglePause() {
+    if (!running || prepEnd !== null) return;       // durante la cuenta previa no se pausa
+    if (ctx && ctx.state === 'suspended') ctx.resume();
+
+    if (!paused) {
+      paused = true;
+      clearInterval(timerId);
+      pausedElapsed = performance.now() - phaseStart;
+      phaseEl.textContent = 'En pausa';
+      setPauseIcon(true);
+    } else {
+      paused = false;
+      setPauseIcon(false);
+      const p = phases[idx];
+      beginPrep(p.n + '/' + totalExercises(), (t) => {
+        phaseStart = t - pausedElapsed;             // retoma justo donde quedó
+        renderPhase(p);
+      });
+      timerId = setInterval(tick, 50);
+    }
   }
 
   function endRun() {
     clearInterval(timerId);
     running = false;
+    paused = false;
+    prepEnd = null;
+    prepDone = null;
+    pauseBtn.hidden = true;
+    pauseBtn.disabled = false;
     lockConfig(false);
     startBtn.textContent = 'Comenzar';
     startBtn.classList.remove('is-running');
@@ -311,6 +402,7 @@
   }
 
   startBtn.addEventListener('click', () => (running ? stop() : start()));
+  pauseBtn.addEventListener('click', togglePause);
 
   /* ============================================================
      PANTALLA ENCENDIDA DURANTE EL ENTRENAMIENTO
@@ -330,6 +422,7 @@
   /* ============================================================
      INICIO
      ============================================================ */
+  $('version').textContent = APP_VERSION;
   buildConfig();
   CONFIG.forEach(syncPresets);
   refresh();
